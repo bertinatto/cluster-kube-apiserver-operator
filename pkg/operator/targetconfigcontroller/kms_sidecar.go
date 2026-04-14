@@ -136,7 +136,7 @@ func addKMSPluginSidecarToPodSpec(podSpec *corev1.PodSpec, containerName string,
 		Command:         []string{"/bin/sh", "-c"},
 		Args: []string{fmt.Sprintf(`
 	echo "%s" > /tmp/secret-id
-	exec /vault-kube-kms \
+	exec /mock-vault-kms \
 	-listen-address=unix:///var/run/kmsplugin/kms.sock \
 	-vault-address=%s \
 	-vault-namespace=%s \

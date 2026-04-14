@@ -331,7 +331,7 @@ func managePods(ctx context.Context, client coreclientv1.ConfigMapsGetter, featu
 	}
 
 	// TODO: placeholder. I (fbertina) need to grant you read permissions. Please ask
-	kmsPluginImage := "quay.io/bertinatto/vault:v1"
+	kmsPluginImage := "quay.io/rhn_support_rgangwar/mock-kms-plugin-vault:latest"
 
 	// encryptionConfig, err := secretLister.Secrets(namespace string)
 
