@@ -14,7 +14,7 @@ require (
 	github.com/miekg/dns v1.1.61
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/openshift-eng/openshift-tests-extension v0.0.0-20250804142706-7b3ab438a292
-	github.com/openshift/api v0.0.0-20260317165824-54a3998d81eb
+	github.com/openshift/api v0.0.0-20260326111139-30c2ef7a272e
 	github.com/openshift/build-machinery-go v0.0.0-20250530140348-dc5b2804eeee
 	github.com/openshift/client-go v0.0.0-20260317180604-743f664b82d1
 	github.com/openshift/library-go v0.0.0-20260409165127-c57da2bf5720
@@ -136,3 +136,9 @@ require (
 )
 
 replace github.com/onsi/ginkgo/v2 => github.com/openshift/onsi-ginkgo/v2 v2.6.1-0.20251001123353-fd5b1fb35db1
+
+replace (
+	github.com/openshift/api => github.com/ardaguclu/openshift-api v0.0.0-20260416125923-e7b399e13aaf
+	github.com/openshift/client-go => github.com/ardaguclu/client-go v0.0.0-20260416132153-8efa801dc740
+	github.com/openshift/library-go => github.com/ardaguclu/library-go v0.0.0-20260416132259-5e6285d10163
+)

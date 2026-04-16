@@ -2,7 +2,9 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -145,7 +147,11 @@ func (c *stateController) generateAndApplyCurrentEncryptionConfigSecret(ctx cont
 	}
 
 	desiredEncryptionConfig := encryptionconfig.FromEncryptionState(desiredEncryptionState)
-	changed, err := c.applyEncryptionConfigSecret(ctx, desiredEncryptionConfig, recorder)
+	providerConfigs, credentialConfigs, configMapConfigs, err := collectKMSData(desiredEncryptionState)
+	if err != nil {
+		return err
+	}
+	changed, err := c.applyEncryptionConfigSecret(ctx, desiredEncryptionConfig, providerConfigs, credentialConfigs, configMapConfigs, recorder)
 	if err != nil {
 		return err
 	}
@@ -161,14 +167,57 @@ func (c *stateController) generateAndApplyCurrentEncryptionConfigSecret(ctx cont
 	return nil
 }
 
-func (c *stateController) applyEncryptionConfigSecret(ctx context.Context, encryptionConfig *apiserverconfigv1.EncryptionConfiguration, recorder events.Recorder) (bool, error) {
-	s, err := encryptionconfig.ToSecret("openshift-config-managed", fmt.Sprintf("%s-%s", encryptionconfig.EncryptionConfSecretName, c.instanceName), encryptionConfig)
+func (c *stateController) applyEncryptionConfigSecret(ctx context.Context, encryptionConfig *apiserverconfigv1.EncryptionConfiguration, providerConfigs, credentialConfigs, configMapConfigs map[string][]byte, recorder events.Recorder) (bool, error) {
+	s, err := encryptionconfig.ToSecret("openshift-config-managed", fmt.Sprintf("%s-%s", encryptionconfig.EncryptionConfSecretName, c.instanceName), encryptionConfig, providerConfigs, credentialConfigs, configMapConfigs)
 	if err != nil {
 		return false, err
 	}
 
 	_, changed, applyErr := resourceapply.ApplySecret(ctx, c.secretClient, recorder, s)
 	return changed, applyErr
+}
+
+// collectKMSData collects serialized KMS provider configurations and credentials from
+// the desired encryption state, keyed by keyID. These are propagated to the
+// encryption-config secret as data entries keyed by "{prefix}-{keyID}".
+func collectKMSData(desiredState map[schema.GroupResource]state.GroupResourceState) (providerConfigs, credentialConfigs, configMapConfigs map[string][]byte, err error) {
+	providerConfigs = map[string][]byte{}
+	credentialConfigs = map[string][]byte{}
+	configMapConfigs = map[string][]byte{}
+	seen := map[string]bool{}
+	for _, grState := range desiredState {
+		for _, key := range grState.ReadKeys {
+			if key.Mode != state.KMS || key.KMSProviderConfig == nil {
+				continue
+			}
+			if seen[key.Key.Name] {
+				continue
+			}
+			seen[key.Key.Name] = true
+			data, err := json.Marshal(key.KMSProviderConfig)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to marshal KMS provider config for key %s: %v", key.Key.Name, err)
+			}
+			providerConfigs[key.Key.Name] = data
+
+			if len(key.KMSCredentials) > 0 {
+				credData, err := json.Marshal(key.KMSCredentials)
+				if err != nil {
+					return nil, nil, nil, fmt.Errorf("failed to marshal KMS credentials for key %s: %v", key.Key.Name, err)
+				}
+				credentialConfigs[key.Key.Name] = credData
+			}
+
+			if len(key.KMSConfigMapData) > 0 {
+				cmData, err := json.Marshal(key.KMSConfigMapData)
+				if err != nil {
+					return nil, nil, nil, fmt.Errorf("failed to marshal KMS configmap data for key %s: %v", key.Key.Name, err)
+				}
+				configMapConfigs[key.Key.Name] = cmData
+			}
+		}
+	}
+	return providerConfigs, credentialConfigs, configMapConfigs, nil
 }
 
 // eventsFromEncryptionConfigChanges return slice of event reasons with messages corresponding to a difference between current and desired encryption state.
@@ -233,6 +282,40 @@ func eventsFromEncryptionConfigChanges(current, desired map[schema.GroupResource
 				reason:  "EncryptionReadKeysChanged",
 				message: fmt.Sprintf("Number of read keys for resource %q changed from %d to %d", desiredGroupResource, len(currentGroupResource.ReadKeys), len(desiredGroupResourceState.ReadKeys)),
 			})
+		}
+
+		if currentGroupResource.HasWriteKey() && desiredGroupResourceState.HasWriteKey() &&
+			desiredGroupResourceState.WriteKey.Mode == state.KMS && desiredGroupResourceState.WriteKey.KMSProviderConfig != nil &&
+			!reflect.DeepEqual(currentGroupResource.WriteKey.KMSProviderConfig, desiredGroupResourceState.WriteKey.KMSProviderConfig) {
+			result = append(result, eventWithReason{
+				reason:  "EncryptionKMSProviderConfigChanged",
+				message: fmt.Sprintf("KMS provider config for key ID %s of resource %q changed", desiredGroupResourceState.WriteKey.Key.Name, desiredGroupResource),
+			})
+		}
+
+		// Check for credentials and configmap data changes on all read keys
+		for _, desiredKey := range desiredGroupResourceState.ReadKeys {
+			if desiredKey.Mode != state.KMS || desiredKey.KMSProviderConfig == nil {
+				continue
+			}
+			for _, currentKey := range currentGroupResource.ReadKeys {
+				if !state.EqualKeyAndEqualID(&currentKey, &desiredKey) {
+					continue
+				}
+				if !reflect.DeepEqual(currentKey.KMSCredentials, desiredKey.KMSCredentials) {
+					result = append(result, eventWithReason{
+						reason:  "EncryptionKMSCredentialsChanged",
+						message: fmt.Sprintf("KMS credentials for key ID %s of resource %q changed", desiredKey.Key.Name, desiredGroupResource),
+					})
+				}
+				if !reflect.DeepEqual(currentKey.KMSConfigMapData, desiredKey.KMSConfigMapData) {
+					result = append(result, eventWithReason{
+						reason:  "EncryptionKMSConfigMapDataChanged",
+						message: fmt.Sprintf("KMS configmap data for key ID %s of resource %q changed", desiredKey.Key.Name, desiredGroupResource),
+					})
+				}
+				break
+			}
 		}
 	}
 	return result

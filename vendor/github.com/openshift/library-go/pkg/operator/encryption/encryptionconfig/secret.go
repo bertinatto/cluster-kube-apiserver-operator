@@ -3,6 +3,7 @@ package encryptionconfig
 import (
 	"fmt"
 
+	"github.com/openshift/library-go/pkg/operator/encryption/secrets"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -47,14 +48,16 @@ func FromSecret(encryptionConfigSecret *corev1.Secret) (*apiserverconfigv1.Encry
 	return encryptionConfig, nil
 }
 
-func ToSecret(ns, name string, encryptionCfg *apiserverconfigv1.EncryptionConfiguration) (*corev1.Secret, error) {
+// ToSecret creates the encryption-config secret. providerConfigs and credentialConfigs
+// are keyed by keyID and propagated as data entries with their respective prefixes.
+func ToSecret(ns, name string, encryptionCfg *apiserverconfigv1.EncryptionConfiguration, providerConfigs, credentialConfigs, configMapConfigs map[string][]byte) (*corev1.Secret, error) {
 	encoder := apiserverCodecs.LegacyCodec(apiserverconfigv1.SchemeGroupVersion)
 	rawEncryptionCfg, err := runtime.Encode(encoder, encryptionCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode the encryption config: %v", err)
 	}
 
-	return &corev1.Secret{
+	s := &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",
 			APIVersion: corev1.SchemeGroupVersion.String(),
@@ -71,5 +74,17 @@ func ToSecret(ns, name string, encryptionCfg *apiserverconfigv1.EncryptionConfig
 			EncryptionConfSecretName: rawEncryptionCfg,
 		},
 		Type: corev1.SecretTypeOpaque,
-	}, nil
+	}
+
+	for keyID, config := range providerConfigs {
+		s.Data[fmt.Sprintf("%s-%s", secrets.EncryptionSecretKMSProviderConfig, keyID)] = config
+	}
+	for keyID, creds := range credentialConfigs {
+		s.Data[fmt.Sprintf("%s-%s", secrets.EncryptionSecretKMSSecretData, keyID)] = creds
+	}
+	for keyID, cm := range configMapConfigs {
+		s.Data[fmt.Sprintf("%s-%s", secrets.EncryptionSecretKMSConfigMapData, keyID)] = cm
+	}
+
+	return s, nil
 }

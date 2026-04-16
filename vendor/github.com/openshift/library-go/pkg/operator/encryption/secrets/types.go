@@ -51,7 +51,23 @@ const (
 	EncryptionSecretFinalizer = "encryption.apiserver.operator.openshift.io/deletion-protection"
 
 	// EncryptionSecretKMSConfig is the annotation that stores the encoded KMS configuration.
+	// Deprecated: This annotation key is deprecated
 	EncryptionSecretKMSConfig = "encryption.apiserver.operator.openshift.io/kms-config"
+
+	// EncryptionSecretKMSProviderConfig is the data key that stores the serialized provider
+	// configuration for KMS mode in the encryption-key secret.
+	EncryptionSecretKMSProviderConfig = "encryption.apiserver.operator.openshift.io-kms-provider-config"
+
+	// EncryptionSecretKMSEncryptionConfig is the data key that stores the serialized KMS encryption
+	// configuration for KMS mode in the encryption-key secret.
+	EncryptionSecretKMSEncryptionConfig = "encryption.apiserver.operator.openshift.io-kms-encryption-config"
+
+	// EncryptionSecretKMSSecretData is the data key that stores the serialized secret data
+	EncryptionSecretKMSSecretData = "encryption.apiserver.operator.openshift.io-kms-secret-data"
+
+	// EncryptionSecretKMSConfigMapData is the data key that stores the serialized configmap data
+	// for KMS mode in the encryption-key secret.
+	EncryptionSecretKMSConfigMapData = "encryption.apiserver.operator.openshift.io-kms-configmap-data"
 )
 
 // MigratedGroupResources is the data structured stored in the
